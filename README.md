@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # alat_musik_nusantara
 
 A new Flutter project.
@@ -15,3 +16,6 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+=======
+# AlatMusikNusantara_Kelompok5
+>>>>>>> 269033342c03ae176162e791f2428d2da40e580b
