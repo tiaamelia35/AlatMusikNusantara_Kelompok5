@@ -1,121 +1,392 @@
 import 'package:flutter/material.dart';
+import 'theme/nada_theme.dart';
+import 'widgets/nada_components.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const NadaNusantaraApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class NadaNusantaraApp extends StatelessWidget {
+  const NadaNusantaraApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'Nada Nusantara',
+      debugShowCheckedModeBanner: false,
+      theme: NadaTheme.light(),
+      home: const NadaMainScaffold(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class InstrumentItem {
+  final String name;
+  final String region;
+  final String originDetail;
+  final String classification;
+  final String description;
+  final String imageUrl;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  const InstrumentItem({
+    required this.name,
+    required this.region,
+    required this.originDetail,
+    required this.classification,
+    required this.description,
+    required this.imageUrl,
+  });
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class NadaMainScaffold extends StatefulWidget {
+  const NadaMainScaffold({super.key});
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  @override
+  State<NadaMainScaffold> createState() => _NadaMainScaffoldState();
+}
+
+class _NadaMainScaffoldState extends State<NadaMainScaffold> {
+  int _navIndex = 0;
+  int _selectedFilterIndex = 0;
+  String? _playingInstrumentName;
+  bool _isMainAudioPlaying = false;
+  double _audioProgress = 0.35;
+
+  final List<String> _filters = const [
+    'Semua',
+    'Idiofon',
+    'Kordofon',
+    'Membranofon',
+    'Aerofon',
+  ];
+
+  final List<InstrumentItem> _instruments = const [
+    InstrumentItem(
+      name: 'Angklung',
+      region: 'Sunda',
+      originDetail: 'KABUPATEN GARUT • JAWA BARAT',
+      classification: 'Idiofon',
+      description:
+      'Instrumen bambu bernada ganda yang beresonansi melalui getaran tabung ketika digoyangkan secara ritmis.',
+      imageUrl: 'https://picsum.photos/seed/angklung/600/450',
+    ),
+    InstrumentItem(
+      name: 'Sasando',
+      region: 'Rote',
+      originDetail: 'KABUPATEN ROTE NDAO • NTT',
+      classification: 'Kordofon',
+      description:
+      'Harpa petik tradisional dengan resonator daun lontar yang menghasilkan gema akustik lembut dan jernih.',
+      imageUrl: 'https://picsum.photos/seed/sasando/600/450',
+    ),
+    InstrumentItem(
+      name: 'Gamelan Gong',
+      region: 'Jawa',
+      originDetail: 'SURAKARTA • JAWA TENGAH',
+      classification: 'Idiofon',
+      description:
+      'Perunggu tempaan tangan yang menyelaraskan laras pelog dan slendro dalam ansambel keraton.',
+      imageUrl: 'https://picsum.photos/seed/gamelan/600/450',
+    ),
+    InstrumentItem(
+      name: 'Tifa',
+      region: 'Papua',
+      originDetail: 'ASMAT • PAPUA SELATAN',
+      classification: 'Membranofon',
+      description:
+      'Tabuh kayu berukir dengan membran kulit biawak yang menjadi penanda ritme upacara adat.',
+      imageUrl: 'https://picsum.photos/seed/tifa/600/450',
+    ),
+  ];
+
+  void _openInstrumentDetail(InstrumentItem item) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: NadaColors.surfaceCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(NadaRadius.sheetTop),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NadaSpacing.pageMargin,
+              14,
+              NadaSpacing.pageMargin,
+              24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: NadaColors.surfaceOutline,
+                      borderRadius: BorderRadius.circular(NadaRadius.pill),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  item.originDetail,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  item.name,
+                  style: Theme.of(context).textTheme.headlineLarge,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  item.description,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: NadaPrimaryButton(
+                        label: 'Putar Rekaman',
+                        icon: Icons.play_arrow_rounded,
+                        onPressed: () {
+                          setState(() {
+                            _playingInstrumentName = item.name;
+                            _isMainAudioPlaying = true;
+                          });
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    NadaGhostButton(
+                      label: 'Simpan',
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    final selectedCategory = _filters[_selectedFilterIndex];
+    final filteredInstruments = selectedCategory == 'Semua'
+        ? _instruments
+        : _instruments
+        .where((item) => item.classification == selectedCategory)
+        .toList();
+
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: [
+            // Header & Editorial Title
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                NadaSpacing.pageMargin,
+                NadaSpacing.lg,
+                NadaSpacing.pageMargin,
+                0,
+              ),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ARSIP ETNOMUSIKOLOGI NUSANTARA',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Nada Nusantara',
+                      style: Theme.of(context).textTheme.displayLarge,
+                    ),
+                    const SizedBox(height: 20),
+                    const NadaSearchBar(),
+                  ],
+                ),
+              ),
+            ),
+
+            // Filter Chips
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(top: NadaSpacing.md),
+                child: SizedBox(
+                  height: 40,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: NadaSpacing.pageMargin,
+                    ),
+                    itemCount: _filters.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      return NadaFilterChip(
+                        label: _filters[index],
+                        isSelected: _selectedFilterIndex == index,
+                        onTap: () =>
+                            setState(() => _selectedFilterIndex = index),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+
+            // Section Break (36px) + Audio Playback Hub
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                NadaSpacing.pageMargin,
+                NadaSpacing.sectionBreak,
+                NadaSpacing.pageMargin,
+                0,
+              ),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sorotan Akustik',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    NadaAudioPlaybackPill(
+                      title: _playingInstrumentName ?? 'Sasando — Laras Lontar',
+                      subtitle: '01:24 / 03:45',
+                      isPlaying: _isMainAudioPlaying,
+                      progress: _audioProgress,
+                      onTogglePlay: () => setState(
+                            () => _isMainAudioPlaying = !_isMainAudioPlaying,
+                      ),
+                      onSeek: (val) => setState(() => _audioProgress = val),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Section Break (36px) + 2-Column Instrument Grid
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                NadaSpacing.pageMargin,
+                NadaSpacing.sectionBreak,
+                NadaSpacing.pageMargin,
+                16,
+              ),
+              sliver: SliverToBoxAdapter(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Katalog Instrumen',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    Text(
+                      '${filteredInstruments.length} Koleksi',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: NadaColors.woodBrown,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                NadaSpacing.pageMargin,
+                0,
+                NadaSpacing.pageMargin,
+                NadaSpacing.sectionBreak,
+              ),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: NadaSpacing.md,
+                  crossAxisSpacing: NadaSpacing.md,
+                  childAspectRatio: 0.80,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                    final item = filteredInstruments[index];
+                    final isPreviewing = _playingInstrumentName == item.name &&
+                        _isMainAudioPlaying;
+                    return NadaInstrumentCard(
+                      name: item.name,
+                      region: item.region,
+                      classification: item.classification,
+                      imageUrl: item.imageUrl,
+                      isPlayingPreview: isPreviewing,
+                      onTap: () => _openInstrumentDetail(item),
+                      onPlayPreview: () {
+                        setState(() {
+                          if (isPreviewing) {
+                            _isMainAudioPlaying = false;
+                          } else {
+                            _playingInstrumentName = item.name;
+                            _isMainAudioPlaying = true;
+                          }
+                        });
+                      },
+                    );
+                  },
+                  childCount: filteredInstruments.length,
+                ),
+              ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: NadaColors.surfaceOutline, width: 1),
+          ),
+        ),
+        child: NavigationBar(
+          selectedIndex: _navIndex,
+          backgroundColor: NadaColors.surfaceCard,
+          indicatorColor: NadaColors.primarySoft,
+          elevation: 0,
+          onDestinationSelected: (index) => setState(() => _navIndex = index),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined, color: NadaColors.textBody),
+              selectedIcon: Icon(Icons.home_rounded, color: NadaColors.primary),
+              label: 'Beranda',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.grid_view_outlined, color: NadaColors.textBody),
+              selectedIcon:
+              Icon(Icons.grid_view_rounded, color: NadaColors.primary),
+              label: 'Katalog',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.map_outlined, color: NadaColors.textBody),
+              selectedIcon: Icon(Icons.map_rounded, color: NadaColors.primary),
+              label: 'Peta Suara',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.bookmark_border_rounded,
+                  color: NadaColors.textBody),
+              selectedIcon:
+              Icon(Icons.bookmark_rounded, color: NadaColors.primary),
+              label: 'Koleksi',
+            ),
+          ],
+        ),
       ),
     );
   }
