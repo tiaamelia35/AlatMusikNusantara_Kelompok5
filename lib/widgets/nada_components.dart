@@ -322,10 +322,10 @@ class NadaInstrumentCard extends StatelessWidget {
               children: [
                 AspectRatio(
                   aspectRatio: 4 / 3,
-                  child: Image.network(
+                  child: Image.asset(
                     imageUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (context, error, stackTrace) => Container(
                       color: NadaColors.surfaceTranslucent,
                       child: const Icon(
                         Icons.music_note_rounded,
@@ -408,6 +408,43 @@ class NadaInstrumentCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Menampilkan gambar dari asset lokal, atau dari URL kalau diawali http
+class NadaImage extends StatelessWidget {
+  final String path;
+  final BoxFit fit;
+
+  const NadaImage({
+    super.key,
+    required this.path,
+    this.fit = BoxFit.cover,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = Container(
+      color: NadaColors.surfaceTranslucent,
+      child: const Icon(
+        Icons.music_note_rounded,
+        color: NadaColors.tertiaryGold,
+        size: 32,
+      ),
+    );
+
+    if (path.startsWith('http')) {
+      return Image.network(
+        path,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) => fallback,
+      );
+    }
+    return Image.asset(
+      path,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) => fallback,
     );
   }
 }
