@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import '../data/dummy_data.dart';
@@ -23,7 +22,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isPlaying = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  Timer? _fallbackTimer;
+
+  // ID instrumen yang tampil di kartu Favorit (null = belum ada)
+  String? _featuredId;
 
   late List<InstrumentModel> _allInstruments;
 
@@ -65,88 +66,88 @@ class _HomeScreenState extends State<HomeScreen> {
           _isPlaying = false;
           _position = Duration.zero;
         });
-        _fallbackTimer?.cancel();
       }
     });
   }
 
   @override
   void dispose() {
-    _fallbackTimer?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }
 
-  Future<void> _playOrPauseInstrument(InstrumentModel instrument) async {
-    if (_playingInstrument?.id == instrument.id) {
-      if (_isPlaying) {
-        await _audioPlayer.pause();
+  /// Ubah teks durasi "0:10" menjadi Duration (hanya angka sementara
+  /// sebelum durasi asli dari file audio terbaca).
+  Duration _parseDuration(String text) {
+    final parts = text.split(':');
+    if (parts.length == 2) {
+      final m = int.tryParse(parts[0]) ?? 0;
+      final s = int.tryParse(parts[1]) ?? 0;
+      return Duration(minutes: m, seconds: s);
+    }
+    return Duration.zero;
+  }
+
+  Future<void> _startPlayback(InstrumentModel instrument) async {
+    final url = instrument.audioUrl;
+    try {
+      if (url.startsWith('http')) {
+        await _audioPlayer.play(UrlSource(url));
+      } else if (url.startsWith('assets/')) {
+        await _audioPlayer.play(AssetSource(url.replaceFirst('assets/', '')));
+      } else {
+        await _audioPlayer.play(AssetSource(url));
+      }
+    } catch (e) {
+      debugPrint('Gagal memutar audio: $url -> $e');
+      if (mounted) {
         setState(() {
           _isPlaying = false;
         });
-        _fallbackTimer?.cancel();
-      } else {
-        await _audioPlayer.resume();
-        setState(() {
-          _isPlaying = true;
-        });
-        _startFallbackTimer();
-      }
-    } else {
-      await _audioPlayer.stop();
-      _fallbackTimer?.cancel();
-
-      setState(() {
-        _playingInstrument = instrument;
-        _isPlaying = true;
-        _position = Duration.zero;
-        _duration = const Duration(seconds: 30);
-      });
-
-      _startFallbackTimer();
-
-      try {
-        final url = instrument.audioUrl;
-        if (url.startsWith('http')) {
-          await _audioPlayer.play(UrlSource(url));
-        } else if (url.startsWith('assets/')) {
-          await _audioPlayer.play(AssetSource(url.replaceFirst('assets/', '')));
-        } else {
-          await _audioPlayer.play(UrlSource(url));
-        }
-      } catch (e) {
-        debugPrint('Audio stream notice: $e');
       }
     }
   }
 
-  void _startFallbackTimer() {
-    _fallbackTimer?.cancel();
-    _fallbackTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted || !_isPlaying) {
-        timer.cancel();
-        return;
+  Future<void> _playOrPauseInstrument(InstrumentModel instrument) async {
+    // Instrumen tanpa audio
+    if (instrument.audioUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Audio ${instrument.name} belum tersedia'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_playingInstrument?.id == instrument.id) {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+      } else if (_position == Duration.zero) {
+        // Sudah selesai diputar, mulai lagi dari awal
+        await _startPlayback(instrument);
+      } else {
+        await _audioPlayer.resume();
       }
+    } else {
+      await _audioPlayer.stop();
       setState(() {
-        final nextSec = _position.inSeconds + 1;
-        if (nextSec >= _duration.inSeconds) {
-          _position = Duration.zero;
-          _isPlaying = false;
-          timer.cancel();
-        } else {
-          _position = Duration(seconds: nextSec);
-        }
+        _playingInstrument = instrument;
+        _position = Duration.zero;
+        // Angka sementara dari data, nanti diganti durasi asli file
+        _duration = _parseDuration(instrument.duration);
       });
-    });
+      await _startPlayback(instrument);
+    }
   }
 
   Future<void> _stopAudio() async {
-    _fallbackTimer?.cancel();
     await _audioPlayer.stop();
     setState(() {
       _playingInstrument = null;
       _isPlaying = false;
       _position = Duration.zero;
+      _duration = Duration.zero;
     });
   }
 
@@ -164,9 +165,26 @@ class _HomeScreenState extends State<HomeScreen> {
     return result;
   }
 
+  /// Instrumen untuk kartu Favorit: favorit terakhir, atau null kalau belum ada.
+  InstrumentModel? get _featuredInstrument {
+    final favorites = _allInstruments.where((i) => i.isFavorite).toList();
+    if (favorites.isEmpty) return null;
+    return favorites.firstWhere(
+          (i) => i.id == _featuredId,
+      orElse: () => favorites.last,
+    );
+  }
+
   void _toggleFavorite(InstrumentModel item) {
     setState(() {
       item.isFavorite = !item.isFavorite;
+
+      if (item.isFavorite) {
+        _featuredId = item.id;
+      } else if (_featuredId == item.id) {
+        final remaining = _allInstruments.where((i) => i.isFavorite).toList();
+        _featuredId = remaining.isNotEmpty ? remaining.last.id : null;
+      }
     });
   }
 
@@ -196,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildEtnomusikologiBanner(context),
 
                     const SizedBox(height: 24),
-                    // 4. Instrumen Unggulan Minggu Ini (Featured Sasando)
+                    // 4. Instrumen Unggulan Minggu Ini
                     _buildFeaturedSection(context),
 
                     const SizedBox(height: 28),
@@ -260,20 +278,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     'Nada Nusantara',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                          height: 1.1,
-                          color: NadaColors.textPrimary,
-                        ),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      height: 1.1,
+                      color: NadaColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Utama',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontSize: 11,
-                          color: NadaColors.textMuted,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      fontSize: 11,
+                      color: NadaColors.textMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -349,12 +367,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(
                   children: [
                     Text(
-                      'Halo, Arga Pradipta',
+                      'Halo, Nada Nusantara',
                       style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: NadaColors.textPrimary,
-                          ),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: NadaColors.textPrimary,
+                      ),
                     ),
                     const SizedBox(width: 6),
                     const Text('👋', style: TextStyle(fontSize: 18)),
@@ -364,9 +382,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   'Jelajah Warisan Budaya Indonesia',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: NadaColors.textMuted,
-                        fontSize: 13,
-                      ),
+                    color: NadaColors.textMuted,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -390,13 +408,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  '15 KOLEKSI',
+                  '${_allInstruments.length} KOLEKSI',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: NadaColors.primary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 10,
-                        letterSpacing: 0.5,
-                      ),
+                    color: NadaColors.primary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ],
             ),
@@ -470,11 +488,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text(
                           'ARSIP ETNOMUSIKOLOGI',
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: Colors.white,
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.6,
-                              ),
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                          ),
                         ),
                       ],
                     ),
@@ -483,20 +501,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     'Kenali Kekayaan Musik\nNusantara',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          height: 1.25,
-                        ),
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Eksplorasi ragam instrumen musik tradisional dari Sabang sampai Merauke lengkap dengan rekaman audio, sejarah, dan karakteristik unik.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFFD0E1D4),
-                          fontSize: 12.5,
-                          height: 1.45,
-                        ),
+                      color: const Color(0xFFD0E1D4),
+                      fontSize: 12.5,
+                      height: 1.45,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -516,10 +534,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         '38 Provinsi Terpetakan',
                         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
@@ -557,15 +575,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 4. Instrumen Unggulan Minggu Ini (Featured Sasando Card)
+  /// 4. Instrumen Unggulan Minggu Ini (berubah mengikuti favorit terakhir)
   Widget _buildFeaturedSection(BuildContext context) {
-    final sasando = _allInstruments.firstWhere(
-      (item) => item.id == '2',
-      orElse: () => _allInstruments.first,
-    );
+    final featured = _featuredInstrument;
+    if (featured == null) return _buildFeaturedEmptyState(context);
 
-    final isSasandoActive = _playingInstrument?.id == sasando.id;
-    final isSasandoPlayingNow = isSasandoActive && _isPlaying;
+    final firstWord = featured.category.split(' ').first;
+    final kategori =
+        firstWord.substring(0, 1) + firstWord.substring(1).toLowerCase();
+    final lokasi = featured.id == '2'
+        ? 'Rote Ndao, Nusa Tenggara Timur'
+        : featured.province;
+
+    final isFeaturedActive = _playingInstrument?.id == featured.id;
+    final isFeaturedPlayingNow = isFeaturedActive && _isPlaying;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: NadaSpacing.pageMargin),
@@ -584,22 +607,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Instrumen Unggulan Minggu Ini',
+                    'Instrumen Favorit Kamu',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w700,
-                          color: NadaColors.textPrimary,
-                        ),
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                      color: NadaColors.textPrimary,
+                    ),
                   ),
                 ],
               ),
               Text(
-                'Sorotan Utama',
+                'Favorit Terakhir',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: NadaColors.woodBrown,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: NadaColors.woodBrown,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -629,8 +652,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: AspectRatio(
                         aspectRatio: 16 / 9,
                         child: InstrumentImageView(
-                          imageUrl: sasando.imageUrl,
-                          instrumentName: sasando.name,
+                          imageUrl: featured.imageUrl,
+                          instrumentName: featured.name,
                         ),
                       ),
                     ),
@@ -652,41 +675,44 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                    // Badge atas: Populer (kalau ada) + kategori
                     Positioned(
                       top: 12,
                       left: 12,
                       child: Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFD48B38),
-                              borderRadius:
-                                  BorderRadius.circular(NadaRadius.pill),
-                            ),
-                            child: Row(
-                              children: const [
-                                Icon(
-                                  Icons.local_fire_department_rounded,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Populer',
-                                  style: TextStyle(
+                          if (featured.isPopular) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD48B38),
+                                borderRadius:
+                                BorderRadius.circular(NadaRadius.pill),
+                              ),
+                              child: Row(
+                                children: const [
+                                  Icon(
+                                    Icons.local_fire_department_rounded,
+                                    size: 12,
                                     color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
                                   ),
-                                ),
-                              ],
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Populer',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
+                            const SizedBox(width: 6),
+                          ],
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
@@ -695,11 +721,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.9),
                               borderRadius:
-                                  BorderRadius.circular(NadaRadius.pill),
+                              BorderRadius.circular(NadaRadius.pill),
                             ),
-                            child: const Text(
-                              'Kordofon',
-                              style: TextStyle(
+                            child: Text(
+                              kategori,
+                              style: const TextStyle(
                                 color: NadaColors.textPrimary,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
@@ -713,7 +739,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       top: 12,
                       right: 12,
                       child: GestureDetector(
-                        onTap: () => _toggleFavorite(sasando),
+                        onTap: () => _toggleFavorite(featured),
                         child: Container(
                           width: 36,
                           height: 36,
@@ -722,10 +748,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
-                            sasando.isFavorite
+                            featured.isFavorite
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
-                            color: sasando.isFavorite
+                            color: featured.isFavorite
                                 ? Colors.redAccent
                                 : NadaColors.textMuted,
                             size: 20,
@@ -736,26 +762,31 @@ class _HomeScreenState extends State<HomeScreen> {
                     Positioned(
                       bottom: 12,
                       left: 12,
+                      right: 12,
                       child: Row(
-                        children: const [
-                          Icon(
+                        children: [
+                          const Icon(
                             Icons.location_on_rounded,
                             color: Colors.white,
                             size: 14,
                           ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Rote Ndao, Nusa Tenggara Timur',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black54,
-                                  blurRadius: 4,
-                                ),
-                              ],
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              lokasi,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -769,26 +800,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        sasando.name,
+                        featured.name,
                         style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                              color: NadaColors.textPrimary,
-                            ),
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: NadaColors.textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        sasando.description,
+                        featured.description,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontSize: 13,
-                              color: NadaColors.textBody,
-                              height: 1.45,
-                            ),
+                          fontSize: 13,
+                          color: NadaColors.textBody,
+                          height: 1.45,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       // Audio Player Pill
                       GestureDetector(
-                        onTap: () => _playOrPauseInstrument(sasando),
+                        onTap: () => _playOrPauseInstrument(featured),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(
@@ -796,15 +827,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             vertical: 10,
                           ),
                           decoration: BoxDecoration(
-                            color: isSasandoPlayingNow
+                            color: isFeaturedPlayingNow
                                 ? const Color(0xFFEBF5EE)
                                 : const Color(0xFFF7F5F0),
                             borderRadius: BorderRadius.circular(50),
                             border: Border.all(
-                              color: isSasandoPlayingNow
+                              color: isFeaturedPlayingNow
                                   ? NadaColors.primary
                                   : NadaColors.surfaceOutline,
-                              width: isSasandoPlayingNow ? 1.5 : 1,
+                              width: isFeaturedPlayingNow ? 1.5 : 1,
                             ),
                           ),
                           child: Row(
@@ -817,7 +848,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
-                                  isSasandoPlayingNow
+                                  isFeaturedPlayingNow
                                       ? Icons.pause_rounded
                                       : Icons.play_arrow_rounded,
                                   color: Colors.white,
@@ -830,7 +861,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      sasando.audioTitle,
+                                      featured.audioTitle.isNotEmpty
+                                          ? featured.audioTitle
+                                          : 'Audio belum tersedia',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontSize: 13.5,
                                         fontWeight: FontWeight.w700,
@@ -839,12 +874,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      isSasandoActive && _duration.inSeconds > 0
-                                          ? '${_formatDuration(_position)} / ${_formatDuration(_duration)} • ${sasando.province}'
-                                          : sasando.audioSubtitle,
+                                      isFeaturedActive && _duration.inSeconds > 0
+                                          ? '${_formatDuration(_position)} / ${_formatDuration(_duration)} • ${featured.province}'
+                                          : featured.audioSubtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: isSasandoPlayingNow
+                                        color: isFeaturedPlayingNow
                                             ? NadaColors.primary
                                             : NadaColors.textMuted,
                                         fontWeight: FontWeight.w500,
@@ -856,7 +893,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(width: 8),
                               Icon(
                                 Icons.graphic_eq_rounded,
-                                color: isSasandoPlayingNow
+                                color: isFeaturedPlayingNow
                                     ? NadaColors.primary
                                     : NadaColors.tertiaryGold,
                                 size: 24,
@@ -867,6 +904,82 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Tampilan kartu Favorit saat belum ada instrumen yang di-like
+  Widget _buildFeaturedEmptyState(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: NadaSpacing.pageMargin),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.stars_rounded,
+                color: NadaColors.woodBrown,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Instrumen Favorit Kamu',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w700,
+                  color: NadaColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: NadaColors.surfaceOutline, width: 1),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: NadaColors.primary.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.favorite_border_rounded,
+                    color: NadaColors.primary,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Belum ada instrumen favorit',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: NadaColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Tekan ikon hati pada alat musik di Katalog Nusantara, lalu instrumen itu akan tampil di sini.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: NadaColors.textMuted,
                   ),
                 ),
               ],
@@ -890,18 +1003,18 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 'Klasifikasi Organologi',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: NadaColors.textPrimary,
-                    ),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: NadaColors.textPrimary,
+                ),
               ),
               Text(
                 '4 Kategori',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: NadaColors.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  color: NadaColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
           ),
@@ -914,7 +1027,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 1.35,
+              mainAxisExtent: 124, // tinggi tetap supaya tidak melebar di web
             ),
             itemBuilder: (context, index) {
               final item = DummyData.organologyCategories[index];
@@ -1058,10 +1171,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         'Katalog Nusantara',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: NadaColors.textPrimary,
-                            ),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: NadaColors.textPrimary,
+                        ),
                       ),
                       if (_selectedFilter != 'Semua') ...[
                         const SizedBox(width: 6),
@@ -1104,9 +1217,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     'Menampilkan ${list.length} instrumen terpilih',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: NadaColors.textMuted,
-                          fontSize: 11.5,
-                        ),
+                      color: NadaColors.textMuted,
+                      fontSize: 11.5,
+                    ),
                   ),
                 ],
               ),
@@ -1118,7 +1231,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
                 child: Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(NadaRadius.pill),
@@ -1173,6 +1286,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildKatalogItemCard(BuildContext context, InstrumentModel item) {
     final isPlayingThis = _playingInstrument?.id == item.id && _isPlaying;
+    final hasAudio = item.audioUrl.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -1248,11 +1362,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   item.category.toUpperCase(),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w700,
-                        color: NadaColors.textMuted,
-                        letterSpacing: 0.4,
-                      ),
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: NadaColors.textMuted,
+                    letterSpacing: 0.4,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1260,10 +1374,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: NadaColors.textPrimary,
-                      ),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: NadaColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -1322,17 +1436,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 22),
-              // Tombol Dengar / Putar Musik
+              // Tombol Dengar / Jeda
               GestureDetector(
                 onTap: () => _playOrPauseInstrument(item),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: isPlayingThis
                         ? NadaColors.primary
-                        : const Color(0xFFD1E7DD),
+                        : (hasAudio
+                        ? const Color(0xFFD1E7DD)
+                        : const Color(0xFFE9E6E0)),
                     borderRadius: BorderRadius.circular(NadaRadius.pill),
                   ),
                   child: Row(
@@ -1345,7 +1461,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         size: 13,
                         color: isPlayingThis
                             ? Colors.white
-                            : NadaColors.primaryDeep,
+                            : (hasAudio
+                            ? NadaColors.primaryDeep
+                            : NadaColors.textMuted),
                       ),
                       const SizedBox(width: 3),
                       Text(
@@ -1355,7 +1473,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontWeight: FontWeight.w700,
                           color: isPlayingThis
                               ? Colors.white
-                              : NadaColors.primaryDeep,
+                              : (hasAudio
+                              ? NadaColors.primaryDeep
+                              : NadaColors.textMuted),
                         ),
                       ),
                     ],
@@ -1369,11 +1489,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Floating Mini Audio Player Bar (Pemutar Musik Melayang Saat Lagu Diputar)
+  /// Floating Mini Audio Player Bar
   Widget _buildMiniAudioPlayerBar(BuildContext context) {
     final instrument = _playingInstrument!;
-    final double progressRatio = (_duration.inSeconds > 0)
-        ? (_position.inSeconds / _duration.inSeconds).clamp(0.0, 1.0)
+    final double progressRatio = (_duration.inMilliseconds > 0)
+        ? (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
 
     return Container(
@@ -1434,7 +1554,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              // Play/Pause button
               GestureDetector(
                 onTap: () => _playOrPauseInstrument(instrument),
                 child: Container(
@@ -1452,7 +1571,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              // Close button
               GestureDetector(
                 onTap: _stopAudio,
                 child: const Padding(
@@ -1467,7 +1585,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          // Live progress bar
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
@@ -1529,7 +1646,7 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
             activeIcon: Icon(Icons.home_rounded),
-            label: 'Utama',
+            label: 'Beranda',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.search_rounded),
